@@ -33,7 +33,24 @@ except ImportError:
 load_dotenv()
 
 # 最後の実行日時を保存するファイル名
-LAST_RUN_TIMESTAMP_FILE = "last_run_timestamp.json"
+# LAST_RUN_TIMESTAMP_FILE = "last_run_timestamp.json"
+
+# スクリプトが置かれているディレクトリの絶対パスを取得
+# SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# LAST_RUN_TIMESTAMP_FILE = os.path.join(SCRIPT_DIR, "last_run_timestamp.json")
+
+# 最後の実行日時を保存するファイル名
+# ★ここを修正します★
+if getattr(sys, "frozen", False):
+    # PyInstallerでフリーズされた実行ファイルの場合
+    # pyinstaller でビルドされた実行ファイルでは、sys.executable が実行ファイルのパスを指す
+    # 実行ファイルが存在するディレクトリを取得
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    # 通常のPythonスクリプトとして実行される場合
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+LAST_RUN_TIMESTAMP_FILE = os.path.join(APP_DIR, "last_run_timestamp.json")
 
 # Windowsイベントログのソース名とログファイル名
 EVENT_SOURCE_NAME = "SMBProcessorAndPoster"
@@ -79,6 +96,13 @@ def log_to_windows_event_log(message: str, event_id: int, event_type: int):
         # print(f"Logged to Event Log (ID: {event_id}, Type: {event_type}): {message}")
     except Exception as e:
         print(f"Error writing to Windows Event Log: {e}", file=sys.stderr)
+
+
+log_to_windows_event_log(
+    f"Using last run timestamp file: {LAST_RUN_TIMESTAMP_FILE} (absolute path: {os.path.abspath(LAST_RUN_TIMESTAMP_FILE)}) ",
+    EVENT_ID_START,
+    win32con.EVENTLOG_INFORMATION_TYPE,
+)
 
 
 # SMBConnection を扱うためのクラス
@@ -346,6 +370,11 @@ def save_last_run_timestamp(timestamp: datetime.datetime):
         with open(LAST_RUN_TIMESTAMP_FILE, "w", encoding="utf-8") as f:
             json.dump({"last_write_time": timestamp.isoformat()}, f, indent=2)
         print(f"Last run timestamp saved to {LAST_RUN_TIMESTAMP_FILE}")
+        log_to_windows_event_log(
+            f"Last run timestamp saved: {timestamp.isoformat()} {LAST_RUN_TIMESTAMP_FILE}",
+            EVENT_ID_SUCCESS,
+            win32con.EVENTLOG_INFORMATION_TYPE,
+        )
     except Exception as e:
         log_to_windows_event_log(
             f"Error saving last run timestamp: {e}",
@@ -364,6 +393,11 @@ def load_last_run_timestamp() -> str | None:
     try:
         with open(LAST_RUN_TIMESTAMP_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            log_to_windows_event_log(
+                f"Loaded last run timestamp: {data.get('last_write_time', 'None')} from {LAST_RUN_TIMESTAMP_FILE}",
+                EVENT_ID_SUCCESS,
+                win32con.EVENTLOG_INFORMATION_TYPE,
+            )
             return data.get("last_write_time")
     except (json.JSONDecodeError, FileNotFoundError, KeyError) as e:
         log_to_windows_event_log(
